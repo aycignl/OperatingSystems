@@ -1,0 +1,121 @@
+\documentclass[paper=a4, fontsize=11pt]{scrartcl}
+\usepackage[T1]{fontenc}
+\usepackage{fourier}
+
+\usepackage[english]{babel}															% English language/hyphenation
+\usepackage[protrusion=true,expansion=true]{microtype}	
+\usepackage{amsmath,amsfonts,amsthm} % Math packages
+\usepackage[pdftex]{graphicx}	
+\usepackage{url}
+
+
+%%% Custom sectioning
+\usepackage{sectsty}
+\allsectionsfont{\centering \normalfont\scshape}
+
+
+%%% Custom headers/footers (fancyhdr package)
+\usepackage{fancyhdr}
+\pagestyle{fancyplain}
+\fancyhead{}											% No page header
+\fancyfoot[L]{}											% Empty 
+\fancyfoot[C]{}											% Empty
+\fancyfoot[R]{\thepage}									% Pagenumbering
+\renewcommand{\headrulewidth}{0pt}			% Remove header underlines
+\renewcommand{\footrulewidth}{0pt}				% Remove footer underlines
+\setlength{\headheight}{13.6pt}
+
+
+%%% Equation and float numbering
+\numberwithin{equation}{section}		% Equationnumbering: section.eq#
+\numberwithin{figure}{section}			% Figurenumbering: section.fig#
+\numberwithin{table}{section}				% Tablenumbering: section.tab#
+
+
+%%% Maketitle metadata
+\newcommand{\horrule}[1]{\rule{\linewidth}{#1}} 	% Horizontal rule
+
+\title{
+		%\vspace{-1in} 	
+		\usefont{OT1}{bch}{b}{n}
+		\normalfont \normalsize \textsc{CMPE 322} \\ [25pt]
+		\horrule{0.5pt} \\[0.4cm]
+		\huge Exploring Minix and Implementing a Simple System Call \\
+		\horrule{2pt} \\[0.5cm]
+}
+\author{
+		\normalfont 								\normalsize
+        G\"{o}n\"{u}l AYCI\\2016800003\\[-3pt]		\normalsize
+        \today
+}
+\date{}
+
+
+%%% Begin document
+\begin{document}
+\maketitle
+
+\section{Modifying and Compiling the Minix Kernel }
+In this part of the project, first we need to backup the original source files into a different directory.
+I used recursive copy operation in Minix with \texttt{cp -r src src\_orig}. Then I modify src source file and save the original file which is \texttt{ src\_orig}.
+
+\subsection{modification in main.c}
+In the first part of the first question requires that to find the part of \underline{banner information} at the startup and edit it. So, it points to \texttt{main.c} file which is in \texttt{/usr/src/minix/kernel/}. Firstly, In this step, I found the \textit{announce} section in \texttt{main.c}, then I added a line which includes \textbf{This kernel is modified by AYCI, GONUL, 2016800003 for this course Cmpe322}. I used \texttt{vi} for reading and editing this file. After \texttt{vi main.c} step, I used \texttt{esc+A} for writing and \texttt{esc+X} for deleting letter.
+
+\subsection{modification in config.h}
+For this part, I edited \texttt{config.h} file which is in \texttt{/usr/src/minix/include/minix/}. In this file, we have definition part at the top of this file. I edited \texttt{OS\_RELEASE} line to \texttt{OS\_RELEASE "4.0"} because fifth definiton line has \texttt{OS\_VERSION OS\_NAME " " OS\_RELEASE " ("OS\_CONFIG")"} information. Then, I used a similar technique of the previous part to save this edition.
+
+\subsection{modification in main.c}
+In the last question of the first part, we need to locate the file that is responsible for reading the \underline{boot image and process queue} at the boot. This is in \texttt{main.c} of \texttt{kmain} part.
+I found one of the comment line which includes \textit{Set up proc table entries for processes in boot image.} line and I modify this part. Firstly, I added \texttt{printf("\%d", NR\_BOOT\_PROCS)} because I need to print the number of each process involved in the boot process. Then, I added a line \texttt{printf("initializing \%s... $\setminus$n", ip$\rightarrow$proc\_name)} because I also need to print the total number of processes involved in the boot process.
+
+\section{Implementing  a Simple Minix System Call}
+In this problem, we need to implement a system call as a part of the process manager (PM) server with the name \textbf{printinteger}. 
+\subsection{table.c}
+Firstly, we need to add an entry to the PM server system call table that maps a call number. \texttt{table.c} file in path \texttt{/usr/src/minix/servers/pm/}. Then, I added \texttt{CALL(PRINTINTEGER) = do\_integer} at the end of the file.
+
+\subsection{callnr.h}
+Secondly, we need to add a call number definition for the table entry added in the previous step. I did it in \texttt{callnr.h} file which is in \texttt{/usr/src/minix/include/minix}. I added \texttt{\#define PRINTINTEGER        (PM\_BASE + 48)}. When I added this line at the end of the definition part, I had a problem because of highest number from base plus one condition which refers to 49. I organized it that I assigned a call number 48 instead of 49.
+
+\subsection{proto.h}
+Thirdly, I need to define the system call's function prototype. I used \texttt{proto.h} file which is in \texttt{/usr/src/minix/servers/pm/}. I added \texttt{int do\_integer(void);} line of code to \texttt{misc.c} part of this header file.
+
+\subsection{do\_integer.c}
+I created a file which is \texttt{do\_integer.c}. In this file, we have \texttt{printf("System call PRINTINTEGER called with \%d(AYCI, GONUL, \%d)$\setminus$n", i, 2016800003);} which is requested from part 1 of second question.
+
+\subsection{Makefile}
+I need to add the name of the C file to the list of SRCS to compile with the PM server so, I read \texttt{Makefile} with \texttt{vi}. \texttt{Makefile} is in \texttt{/usr/src/minix/servers/pm/}. I added my \texttt{do\_integer.c} file at the end of the SRCS part.
+\\
+Then, I compiled my system call. I went to the directory of \texttt{/usr/src/releasetools/}, then wrote make hdboot and reboot the system.
+ 
+\subsection{Write a library}
+I wrote a user library function for the system call. I followed these steps:
+\\
+
+First, I edited \texttt{unistd.h} file which is in \texttt{/usr/src/include/}. I added a line which is \texttt{int pcall(int value)} before \texttt{\_\_END\_DECLS} and at the end of this header file.
+\\
+\texttt{pcall.c} file, returns \texttt{return \_syscall(PM\_PROC\_NR, PRINTINTEGER, \&m)} which is requested from part 2 of this question. I added \texttt{#include <lib.h> and #include <unistd.h>} to \texttt{pcall.c}. In addition to this, \texttt{pcall} has an integer value. 
+
+\subsection{Test}
+I added a test file which name is \texttt{test.c}. 
+\\
+
+\begin{itemize}
+	\item Go to \texttt{cd /usr/src/} 
+	\item write \texttt{clang test.c}
+	\item write \texttt{./a.out 5}
+\end{itemize}
+
+Then I see \texttt{System call PRINTINTEGER called with 5(AYCI, GONUL, 2016800003)}
+\\
+
+Finally, I created a patch file which name is \texttt{my\_patch}.
+I used \texttt{diff -r src\_orig src > my\_patch} on path \texttt{/usr/}. In this path, \texttt{src\_orig} is my original(clean) source directory, and \texttt{src} is my modified one. 
+
+\section{final comments}
+When I downloaded and run Minix before this project, I studied on Minix for training. So, I changed University part in \texttt{main.c} file. 
+\\
+
+I use \texttt{make hdboot} and \texttt{reboot} many times. But, I did not add it many times (I ignore these steps).
+
+\end{document}
