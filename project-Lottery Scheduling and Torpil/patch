@@ -1,0 +1,420 @@
+diff --git a/include/unistd.h b/include/unistd.h
+index 874ef57..bf29b48 100644
+--- a/include/unistd.h
++++ b/include/unistd.h
+@@ -431,5 +431,8 @@ extern	 int optreset;		/* getopt(3) external variable */
+ extern	 char *suboptarg;	/* getsubopt(3) external variable */
+ #endif
+ 
++int pcall(int value);
++int settickets(int value, int pid);
++int settorpil(int value, int pid);
+ __END_DECLS
+ #endif /* !_UNISTD_H_ */
+diff --git a/minix/include/minix/callnr.h b/minix/include/minix/callnr.h
+index 759350a..d216255 100644
+--- a/minix/include/minix/callnr.h
++++ b/minix/include/minix/callnr.h
+@@ -58,9 +58,11 @@
+ #define PM_GETEPINFO		(PM_BASE + 45)
+ #define PM_GETPROCNR		(PM_BASE + 46)
+ #define PM_GETSYSINFO		(PM_BASE + 47)
+-
+-#define NR_PM_CALLS		48	/* highest number from base plus one */
+-
++#define PRINTINTEGER        (PM_BASE + 48)
++#define SETTICKETS          (PM_BASE + 49)
++#define SETTORPIL          (PM_BASE + 50)
++#define NR_PM_CALLS		(PM_BASE + 51)	/* highest number from base plus one */
++//#define PRINTINTEGER    49
+ /*===========================================================================*
+  *				Calls to VFS				     *
+  *===========================================================================*/
+diff --git a/minix/include/minix/com.h b/minix/include/minix/com.h
+index 35367e9..f471c14 100644
+--- a/minix/include/minix/com.h
++++ b/minix/include/minix/com.h
+@@ -803,6 +803,8 @@
+ #define SCHEDULING_STOP		(SCHEDULING_BASE+3)
+ #define SCHEDULING_SET_NICE	(SCHEDULING_BASE+4)
+ #define SCHEDULING_INHERIT	(SCHEDULING_BASE+5)
++#define SCHEDULING_SETTICKETS (SCHEDULING_BASE+6)
++#define SCHEDULING_SETTORPIL (SCHEDULING_BASE+7)
+ 
+ /*===========================================================================*
+  *              Messages for USB                                             *
+diff --git a/minix/include/minix/config.h b/minix/include/minix/config.h
+index ac1f947..fff30a5 100644
+--- a/minix/include/minix/config.h
++++ b/minix/include/minix/config.h
+@@ -3,7 +3,7 @@
+ 
+ /* Minix release and version numbers. */
+ #define OS_NAME "Minix"
+-#define OS_RELEASE "3.4.0"	/* 3.m.p */
++#define OS_RELEASE "4.0"	/* 3.m.p */
+ #define OS_REV 304000000	/* see NetBSD sys/param.h: 3mm00pp00 */
+ #define OS_CONFIG "GENERIC"
+ #define OS_VERSION OS_NAME " " OS_RELEASE " (" OS_CONFIG ")"
+diff --git a/minix/kernel/main.c b/minix/kernel/main.c
+index 546583a..1d84300 100644
+--- a/minix/kernel/main.c
++++ b/minix/kernel/main.c
+@@ -165,6 +165,7 @@ void kmain(kinfo_t *local_cbi)
+ 		NR_BOOT_MODULES, kinfo.mbi.mi_mods_count);
+ 
+   /* Set up proc table entries for processes in boot image. */
++  printf("%d", NR_BOOT_PROCS);
+   for (i=0; i < NR_BOOT_PROCS; ++i) {
+ 	int schedulable_proc;
+ 	proc_nr_t proc_nr;
+@@ -173,6 +174,7 @@ void kmain(kinfo_t *local_cbi)
+ 
+ 	ip = &image[i];				/* process' attributes */
+ 	DEBUGEXTRA(("initializing %s... ", ip->proc_name));
++	printf("initializing %s... \n", ip->proc_name);
+ 	rp = proc_addr(ip->proc_nr);		/* get process pointer */
+ 	ip->endpoint = rp->p_endpoint;		/* ipc endpoint */
+ 	rp->p_cpu_time_left = 0;
+@@ -343,9 +345,8 @@ static void announce(void)
+ #ifdef _VCS_REVISION
+ 	"(" _VCS_REVISION ")\n"
+ #endif
+-      "Copyright 2016, Vrije Universiteit, Amsterdam, The Netherlands\n",
+-      OS_RELEASE);
+-  printf("MINIX is open source software, see http://www.minix3.org\n");
++      "Copyright 2016, Bogazici UNIVERSITY, ISTANBUL, TURKEY \n" OS_RELEASE);
++  printf("This kernel is modified by AYCI, GONUL, 2016800003 for this course Cmpe322");
+ }
+ 
+ /*===========================================================================*
+diff --git a/minix/kernel/proc.c b/minix/kernel/proc.c
+index 62ef608..0be3a60 100644
+--- a/minix/kernel/proc.c
++++ b/minix/kernel/proc.c
+@@ -44,6 +44,10 @@
+ 
+ #include <minix/syslib.h>
+ 
++#define WINNER 12
++#define LOSER 13
++#define TORPIL 14
++
+ /* Scheduling and message passing functions */
+ static void idle(void);
+ /**
+@@ -1803,6 +1807,22 @@ static struct proc * pick_proc(void)
+    */
+   rdy_head = get_cpulocal_var(run_q_head);
+   for (q=0; q < NR_SCHED_QUEUES; q++) {	
++
++  	//winner olacak--> torpil de kimse var mi yok mu ona gore yaziyorum
++  	//torpil head ini control ediyorum
++  	if(q == WINNER){
++  		if(! (rp = rdy_head[TORPIL])){
++
++  		}
++  		else {
++  				assert(proc_is_runnable(rp));
++				if (priv(rp)->s_flags & BILLABLE)	 	
++					get_cpulocal_var(bill_ptr) = rp; /* bill for system time */
++				return rp;
++		}
++  	}
++
++
+ 	if(!(rp = rdy_head[q])) {
+ 		TRACE(VF_PICKPROC, printf("cpu %d queue %d empty\n", cpuid, q););
+ 		continue;
+diff --git a/minix/lib/libc/sys/Makefile.inc b/minix/lib/libc/sys/Makefile.inc
+index 096107b..c91ae45 100644
+--- a/minix/lib/libc/sys/Makefile.inc
++++ b/minix/lib/libc/sys/Makefile.inc
+@@ -23,7 +23,7 @@ SRCS+= 	accept.c access.c adjtime.c bind.c brk.c sbrk.c m_closefrom.c getsid.c \
+ 	wait4.c write.c \
+ 	utimensat.c utimes.c futimes.c lutimes.c futimens.c \
+ 	_exit.c _ucontext.c environ.c __getcwd.c vfork.c sizeup.c init.c \
+-	getrusage.c setrlimit.c setpgid.c __sysctl.c
++	getrusage.c setrlimit.c setpgid.c __sysctl.c pcall.c settickets.c settorpil.c
+ 
+ # Minix specific syscalls / utils.
+ SRCS+= kernel_utils.c sprofile.c stack_utils.c _mcontext.c
+diff --git a/minix/servers/pm/Makefile b/minix/servers/pm/Makefile
+index 72a9f43..61a8e44 100644
+--- a/minix/servers/pm/Makefile
++++ b/minix/servers/pm/Makefile
+@@ -4,7 +4,8 @@
+ PROG=	pm
+ SRCS=	main.c forkexit.c exec.c time.c alarm.c \
+ 	signal.c utility.c table.c trace.c getset.c misc.c \
+-	profile.c mcontext.c schedule.c event.c
++	profile.c mcontext.c schedule.c event.c do_integer.c \
++        do_settickets.c do_settorpil.c 
+ 
+ DPADD+=	${LIBSYS} ${LIBTIMERS}
+ LDADD+=	-lsys -ltimers
+diff --git a/minix/servers/pm/proto.h b/minix/servers/pm/proto.h
+index 3a85543..ac3c492 100644
+--- a/minix/servers/pm/proto.h
++++ b/minix/servers/pm/proto.h
+@@ -51,6 +51,10 @@ int do_getepinfo(void);
+ int do_svrctl(void);
+ int do_getsetpriority(void);
+ int do_getrusage(void);
++int do_integer(void);
++int do_settickets(void);
++int do_settorpil(void);
++
+ 
+ /* schedule.c */
+ void sched_init(void);
+diff --git a/minix/servers/pm/table.c b/minix/servers/pm/table.c
+index 8d9b85e..91dcadd 100644
+--- a/minix/servers/pm/table.c
++++ b/minix/servers/pm/table.c
+@@ -58,5 +58,9 @@ int (* const call_vec[NR_PM_CALLS])(void) = {
+ 	CALL(PM_EXEC_RESTART)	= do_execrestart,
+ 	CALL(PM_GETEPINFO)	= do_getepinfo,		/* getepinfo(2) */
+ 	CALL(PM_GETPROCNR)	= do_getprocnr,		/* getprocnr(2) */
+-	CALL(PM_GETSYSINFO)	= do_getsysinfo		/* getsysinfo(2) */
++//	CALL(PM_GETSYSINFO)	= do_getsysinfo,    /* getsysinfo(2) */
++	CALL(PRINTINTEGER) = do_integer,
++    CALL(SETTICKETS) = do_settickets,
++    CALL(SETTORPIL) = do_settorpil
++    
+ };
+diff --git a/minix/servers/sched/main.c b/minix/servers/sched/main.c
+index 83d0b28..a4a2bc4 100644
+--- a/minix/servers/sched/main.c
++++ b/minix/servers/sched/main.c
+@@ -82,6 +82,12 @@ int main(void)
+ 				result = EPERM;
+ 			}
+ 			break;
++		case SCHEDULING_SETTICKETS:
++			sched_settickets(&m_in);
++			break;
++		case SCHEDULING_SETTORPIL:
++			sched_settorpil(&m_in);
++			break;
+ 		default:
+ 			result = no_sys(who_e, call_nr);
+ 		}
+diff --git a/minix/servers/sched/proto.h b/minix/servers/sched/proto.h
+index 640550d..e0e1869 100644
+--- a/minix/servers/sched/proto.h
++++ b/minix/servers/sched/proto.h
+@@ -13,6 +13,9 @@ int do_stop_scheduling(message *m_ptr);
+ int do_nice(message *m_ptr);
+ void init_scheduling(void);
+ void balance_queues(void);
++int sched_settickets(message *m_ptr);
++int sched_settorpil(message *m_ptr);
++int do_lottery(void);
+ 
+ /* utility.c */
+ int no_sys(int who_e, int call_nr);
+diff --git a/minix/servers/sched/schedproc.h b/minix/servers/sched/schedproc.h
+index a368f37..ec326bb 100644
+--- a/minix/servers/sched/schedproc.h
++++ b/minix/servers/sched/schedproc.h
+@@ -33,6 +33,11 @@ EXTERN struct schedproc {
+ 	bitchunk_t cpu_mask[BITMAP_CHUNKS(CONFIG_MAX_CPUS)]; /* what CPUs is the
+ 								process allowed
+ 								to run on */
++	/* Lottery scheduling */
++	unsigned ticket_count;
++	unsigned max_tickets;
++	unsigned min_tickets;
++	unsigned torpil;
+ } schedproc[NR_PROCS];
+ 
+ /* Flag values */
+diff --git a/minix/servers/sched/schedule.c b/minix/servers/sched/schedule.c
+index 76f2e3f..92daf0c 100644
+--- a/minix/servers/sched/schedule.c
++++ b/minix/servers/sched/schedule.c
+@@ -12,6 +12,7 @@
+ #include <assert.h>
+ #include <minix/com.h>
+ #include <machine/archtypes.h>
++#include <stdlib.h>
+ 
+ static unsigned balance_timeout;
+ 
+@@ -19,6 +20,10 @@ static unsigned balance_timeout;
+ 
+ static int schedule_process(struct schedproc * rmp, unsigned flags);
+ 
++#define WINNER_Q 12
++#define LOSER_Q 13
++#define TORPIL_Q 14
++
+ #define SCHEDULE_CHANGE_PRIO	0x1
+ #define SCHEDULE_CHANGE_QUANTUM	0x2
+ #define SCHEDULE_CHANGE_CPU	0x4
+@@ -42,6 +47,7 @@ static int schedule_process(struct schedproc * rmp, unsigned flags);
+ 
+ /* processes created by RS are sysytem processes */
+ #define is_system_proc(p)	((p)->parent == RS_PROC_NR)
++#define is_user_proc(p)		((p)->priority >= WINNER_Q && (p)->priority <= TORPIL_Q)
+ 
+ static unsigned cpu_proc[CONFIG_MAX_CPUS];
+ 
+@@ -100,9 +106,16 @@ int do_noquantum(message *m_ptr)
+ 		rmp->priority += 1; /* lower priority */
+ 	}
+ 
+-	if ((rv = schedule_process_local(rmp)) != OK) {
++	if (is_system_proc(rmp)) {
++		if ((rv = schedule_process_local(rmp)) != OK) {
++			return rv;
++		}
++	}
++
++	if ((rv = do_lottery()) != OK) {
+ 		return rv;
+ 	}
++
+ 	return OK;
+ }
+ 
+@@ -131,6 +144,10 @@ int do_stop_scheduling(message *m_ptr)
+ #endif
+ 	rmp->flags = 0; /*&= ~IN_USE;*/
+ 
++	if (is_user_proc(rmp)) {
++		do_lottery();
++	}
++
+ 	return OK;
+ }
+ 
+@@ -204,7 +221,12 @@ int do_start_scheduling(message *m_ptr)
+ 				&parent_nr_n)) != OK)
+ 			return rv;
+ 
+-		rmp->priority = schedproc[parent_nr_n].priority;
++		//rmp->priority = schedproc[parent_nr_n].priority;
++		rmp->ticket_count = 20;
++		rmp->max_tickets = 2000;
++		rmp->min_tickets = 1;
++		rmp->torpil = 0;
++		rmp->priority = LOSER_Q;
+ 		rmp->time_slice = schedproc[parent_nr_n].time_slice;
+ 		break;
+ 		
+@@ -279,7 +301,7 @@ int do_nice(message *m_ptr)
+ 	old_max_q = rmp->max_priority;
+ 
+ 	/* Update the proc entry and reschedule the process */
+-	rmp->max_priority = rmp->priority = new_q;
++	//rmp->max_priority = rmp->priority = new_q;
+ 
+ 	if ((rv = schedule_process_local(rmp)) != OK) {
+ 		/* Something went wrong when rescheduling the process, roll
+@@ -352,6 +374,8 @@ void init_scheduling(void)
+  */
+ void balance_queues(void)
+ {
++	return;
++
+ 	struct schedproc *rmp;
+ 	int r, proc_nr;
+ 
+@@ -367,3 +391,95 @@ void balance_queues(void)
+ 	if ((r = sys_setalarm(balance_timeout, 0)) != OK)
+ 		panic("sys_setalarm failed: %d", r);
+ }
++
++/* LOTTERY SCHEDULING */
++struct schedproc* find_proc(endpoint_t epid) {
++	register struct	schedproc* rmp;
++
++	for (rmp = &schedproc[0]; rmp < &schedproc[NR_PROCS]; rmp++) {
++		if (rmp->flags & IN_USE && rmp->endpoint == epid) {
++			return (rmp);
++		}
++	}
++
++	return NULL;
++}
++
++int sched_settickets(message* m_ptr) {
++	struct schedproc* rmp;
++	int arg_who, count;
++
++	arg_who = m_ptr->m_lc_pm_priority.who; /* Endpoint */
++	count = m_ptr->m1_i1; /* Ticket count */
++
++	//printf("Setting tickets for %d: %d\n", arg_who, count);
++
++	if ((rmp = find_proc(arg_who)) == NULL) {
++		return (ESRCH);
++	}
++
++	if (count > rmp->max_tickets) {
++		rmp->ticket_count = rmp->max_tickets;
++	} else if (count < rmp->min_tickets) {
++		rmp->ticket_count = rmp->min_tickets;
++	} else {
++		rmp->ticket_count = count;
++	}
++
++	return OK;
++}
++
++int sched_settorpil(message* m_ptr) {
++	struct schedproc* rmp;                               			
++	int arg_who, torpil;
++
++	arg_who = m_ptr->m_lc_pm_priority.who; /* Endpoint */
++	torpil = m_ptr->m1_i1; /* Torpil */
++
++	//printf("Setting torpil for %d: %d\n", arg_who, torpil);
++
++	if ((rmp = find_proc(arg_who)) == NULL) {
++		return (ESRCH);
++	}
++
++	rmp->torpil = torpil;
++
++	return OK;
++}
++
++int do_lottery() {
++	struct schedproc* rmp = NULL;
++	int proc_nr = 0;
++	int rv = 0;
++	int winning_num = 0;
++	int total_tickets = 0;
++	int proc_count = 0;
++	int won = 0;
++
++	/* Calculate the total number of tickets */
++	for (proc_nr = 0, rmp = schedproc; proc_nr < NR_PROCS; proc_nr++, rmp++) {
++		if (rmp->flags & IN_USE && is_user_proc(rmp)) {
++			proc_count++;
++			total_tickets += rmp->ticket_count;
++		}
++	}
++	
++	if (total_tickets > 0) {
++		winning_num = random() % total_tickets + 1;
++		for (proc_nr = 0, rmp = schedproc; proc_nr < NR_PROCS; proc_nr++, rmp++) {
++			if (rmp->flags & IN_USE && is_user_proc(rmp)) {
++				winning_num -= rmp->ticket_count;
++
++				if (winning_num < 0 && !won) {
++					rmp->priority = WINNER_Q;
++					won = 1;
++				} else {
++					rmp->priority = LOSER_Q;
++				}
++				schedule_process_local(rmp);
++			}
++		}
++	}
++
++	return OK;
++}	
