@@ -4,5 +4,5 @@
   <li>Simple system call</li>
   <li>Lottery scheduling and Torpil</li>
 </ul>
-> They have their own project description. You can find in seperate files.<br>
+> They have their own project description. You can find them in seperate files.<br>
 > For the second project, I got help form Rahmetullah VAROL. Many thanks to him.
